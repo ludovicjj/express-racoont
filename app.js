@@ -7,7 +7,7 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// end-point
+// routes
 app.use('/api/user', userRoutes);
 
 // server
