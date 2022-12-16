@@ -1,5 +1,5 @@
 const UserModel = require('../models/user.model')
-const { Types: { ObjectId: ObjectId } } = require('mongoose');
+const { isValidObjectId } = require("mongoose");
 
 module.exports.getUsers = async (req, res) => {
     try {
@@ -11,7 +11,7 @@ module.exports.getUsers = async (req, res) => {
 }
 
 module.exports.getUser = async (req, res) => {
-    if (!ObjectId.isValid(req.params.id)) {
+    if (!isValidObjectId(req.params.id)) {
         return res.status(400).json({
             message: "Bad Request",
             status: 400,
@@ -27,34 +27,42 @@ module.exports.getUser = async (req, res) => {
 }
 
 module.exports.updateUser = async (req, res) => {
-    if (!ObjectId.isValid(req.params.id)) {
-        return res.status(400).json({
-            message: "Bad Request",
-            status: 400,
-            error: `Invalid ObjectID: ${req.params.id}`
-        });
+    if (!isValidObjectId(req.params.id)) {
+        return res.status(400).json({message: "Bad Request", status: 400, error: `Invalid ObjectID: ${req.params.id}`});
     }
-
-    const filter = { _id: req.params.id }
+    const { bio, pseudo, email, password} = req.body;
+    const filter = { _id: req.params.id };
     const update = {
-        $set: { bio: req.body.bio},
-        $setOnInsert: {pseudo: null, email: null, password: null}
-    }
-    const opts = { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true };
+        $set: { bio },
+        $setOnInsert: { pseudo, email, password }
+    };
+    const opts = { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+
 
     try {
-        let user = await UserModel.findOneAndUpdate(filter, update, opts)
-        return res.json({ message: "OK", status: 200, data: user })
+        const doc = await UserModel.findOneAndUpdate(filter, update, opts);
+        let error = doc.validateSync()
+        if (error) {
+            await UserModel.deleteOne(filter)
+            return res.status(400).json({ message: "Bad Request", status: 400, ...error })
+        }
+
+        return res.json({ message: "OK", status: 200, data: doc })
     } catch (error) {
         if (error.name === "ValidationError") {
-            return res.status(400).json({ message: "Bad Request", status: 400, data: error })
+            return res.status(400).json({ message: "Bad Request", status: 400, ...error })
         }
+
+        if (error.name === 'IndexError') {
+            return res.status(400).json({ message: "Bad Request", status: 400, errors: error.errors });
+        }
+
         return res.status(500).json({errors: error})
     }
 }
 
 module.exports.deleteUser = async (req, res) => {
-    if (!ObjectId.isValid(req.params.id)) {
+    if (!isValidObjectId(req.params.id)) {
         return res.status(400).json({
             message: "Bad Request",
             status: 400,
