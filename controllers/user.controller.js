@@ -1,6 +1,5 @@
 const UserModel = require('../models/user.model')
 const { isValidObjectId } = require("mongoose");
-const mongoose = require("mongoose");
 
 module.exports.getUsers = async (req, res) => {
     try {
