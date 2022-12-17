@@ -31,31 +31,27 @@ module.exports.updateUser = async (req, res) => {
         return res.status(400).json({message: "Bad Request", status: 400, error: `Invalid ObjectID: ${req.params.id}`});
     }
     const { bio, pseudo, email, password} = req.body;
-    const filter = { _id: req.params.id };
-    const update = {
-        $set: { bio },
-        $setOnInsert: { pseudo, email, password }
-    };
-    const opts = { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
-
 
     try {
-        const doc = await UserModel.findOneAndUpdate(filter, update, opts);
-        let error = doc.validateSync()
-        if (error) {
-            await UserModel.deleteOne(filter)
-            return res.status(400).json({ message: "Bad Request", status: 400, ...error })
+        // Récupérer le document existant ou créer un nouveau document
+        let doc = await UserModel.findById(req.params.id).select('-password');
+        if (!doc) {
+            doc = new UserModel({pseudo, email, password});
         }
 
-        return res.json({ message: "OK", status: 200, data: doc })
+        // Mettre à jour la propriété "bio" du document
+        doc.bio = bio;
+
+        // Enregistrer le document
+        await doc.save();
+
+        return res.json({ message: "OK", status: 200, data: doc });
     } catch (error) {
-        if (error.name === "ValidationError") {
+        if (error.name === "ValidationError")
             return res.status(400).json({ message: "Bad Request", status: 400, ...error })
-        }
 
-        if (error.name === 'IndexError') {
+        if (error.name === 'IndexError')
             return res.status(400).json({ message: "Bad Request", status: 400, errors: error.errors });
-        }
 
         return res.status(500).json({errors: error})
     }
