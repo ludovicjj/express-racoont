@@ -80,3 +80,77 @@ module.exports.deleteUser = async (req, res) => {
         return res.status(500).json({errors: err})
     }
 }
+
+module.exports.follow = async (req, res) => {
+    if (
+        !isValidObjectId(req.params.id) ||
+        !isValidObjectId(req.body.idToFollow)
+    ) {
+        return res.status(400).json({message: "Bad Request", status: 400, error: "Invalid ObjectID"});
+    }
+
+    try {
+        // Récupérer les documents
+        // followerUser : correspond à utilisateur qui suit
+        // followingUser : correspond à utilisateur suivi
+        let followerUser = await UserModel.findById(req.params.id).select('-password');
+        const followingUser = await UserModel.findById(req.body.idToFollow);
+
+        if (!followerUser || !followingUser) {
+            return res.status(400).json({message: "Bad Request", status: 400, description: "The follow operation failed"})
+        }
+
+        if (!followingUser.followers.includes(followerUser._id)) {
+            // Mettre à jour le document de l'utilisateur qui suit
+            followerUser = await UserModel.findByIdAndUpdate(followerUser._id, {
+                $push: { followings: followingUser._id },
+            }, {new: true}).select("-password");
+
+            // Mettre à jour le document de l'utilisateur suivi
+            await UserModel.findByIdAndUpdate(followingUser._id, {
+                $push: { followers: followerUser._id },
+            });
+        }
+
+        return res.json({message: "OK", status: 200, data: followerUser})
+    } catch (error) {
+        return res.status(500).json({errors: error})
+    }
+}
+
+module.exports.unfollow = async (req, res) => {
+    if (
+        !isValidObjectId(req.params.id) ||
+        !isValidObjectId(req.body.idToUnfollow)
+    ) {
+        return res.status(400).json({message: "Bad Request", status: 400, error: "Invalid ObjectID"});
+    }
+
+    try {
+        // Récupérer les documents
+        // followerUser : correspond à utilisateur qui suit
+        // followingUser : correspond à utilisateur suivi
+        let followerUser = await UserModel.findById(req.params.id).select('-password');
+        const followingUser = await UserModel.findById(req.body.idToUnfollow);
+
+        if (!followerUser || !followingUser) {
+            return res.status(400).json({message: "Bad Request", status: 400, description: "The unfollow operation failed"})
+        }
+
+        if (followingUser.followers.includes(followerUser._id)) {
+            // Mettre à jour le document de l'utilisateur qui suit
+            followerUser = await UserModel.findByIdAndUpdate(followerUser._id, {
+                $pull: { followings: followingUser._id },
+            }, {new: true}).select("-password");
+
+            // Mettre à jour le document de l'utilisateur suivi
+            await UserModel.findByIdAndUpdate(followingUser._id, {
+                $pull: { followers: followerUser._id },
+            });
+        }
+        return res.json({message: "OK", status: 200, data: followerUser})
+
+    } catch (error) {
+        return res.status(500).json({errors: error})
+    }
+}

@@ -38,7 +38,7 @@ const userSchema = new mongoose.Schema(
         followers: {
             type: [String]
         },
-        following: {
+        followings: {
             type: [String]
         },
         likes: {
