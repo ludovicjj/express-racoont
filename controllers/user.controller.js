@@ -71,15 +71,52 @@ module.exports.deleteUser = async (req, res) => {
             return res.status(404).json({message: "Not Found", status: 404, description: `Failed to delete user with the given id: ${ id }`});
         }
 
-        // Mettre à jour les utilisateurs qui suivaient ou que suivait l'utilisateur à supprimer
-        if (doc.followings.length || doc.followers.length) {
-            await UserModel.updateMany(
-                { $or: [{followings: id}, {followers: id}] },
-                { $pull: { followings: id, followers: id }}
-            )
+        const docId = doc._id.toString();
+
+        // pipeline
+        const pipeline = [
+            {
+                $match: { $or: [{followings: docId}, {followers: docId}] }
+            },
+            {
+                $project: { followings: 1, followers: 1 }
+            },
+            {
+                $addFields: {
+                    followings: {
+                        $filter: {
+                            input: "$followings",
+                            as: "following",
+                            cond: { $ne: [ "$$following", docId ] }
+                        }
+                    },
+                    followers: {
+                        $filter: {
+                            input: "$followers",
+                            as: "follower",
+                            cond: { $ne: [ "$$follower", docId ] }
+                        }
+                    }
+                }
+            },
+            {
+                $project: { _id: 0, userId: "$_id", followings: 1, followers: 1}
+            }
+        ];
+
+        // aggregate query
+        const updatedUsers = await UserModel.aggregate(pipeline);
+
+        // Met à jour chaque document avec les nouvelles valeurs de followings et followers.
+        for (const user of updatedUsers) {
+            await UserModel.updateOne(
+                { _id: user.userId },
+                { $set: { followings: user.followings, followers: user.followers }}
+            );
         }
 
-        return res.status(200).json({ message: "OK", status: 200, data: { _id: doc._id } })
+        //return res.status(200).json({ message: "OK", status: 200, data: { _id: doc._id } })
+        return res.status(200).json({ message: "OK", status: 200, data: { _id: docId } })
     } catch (err) {
         return res.status(500).json({errors: err})
     }
@@ -103,21 +140,20 @@ module.exports.follow = async (req, res) => {
         let followerUser = await UserModel.findById(followerId).select('-password');
         const followingUser = await UserModel.findById(followingId);
 
-        if (!followerUser || !followingUser)
+        if (!followerUser || !followingUser) {
             return res.status(400).json({message: "Bad Request", status: 400, description: "The follow operation failed"})
+        }
 
-        if (
-            !followingUser.followers.includes(followerId) &&
-            followerId !== followingId
-        ) {
+        // Empêche un utilisateur de se s'autosuivre
+        if (followerId !== followingId) {
             // Mettre à jour le document de l'utilisateur qui suit
             followerUser = await UserModel.findByIdAndUpdate(followerId, {
-                $push: { followings: followingId },
+                $addToSet: { followings: followingId },
             }, {new: true}).select("-password");
 
-            // Mettre à jour le document de l'utilisateur suivi
+            // Mettre à jour le document de l'utilisateur qui est suivi
             await UserModel.findByIdAndUpdate(followingId, {
-                $push: { followers: followerId },
+                $addToSet: { followers: followerId },
             });
         }
 
@@ -147,21 +183,16 @@ module.exports.unfollow = async (req, res) => {
         if (!followerUser || !followingUser)
             return res.status(400).json({message: "Bad Request", status: 400, description: "The unfollow operation failed"})
 
+        // Mettre à jour le document de l'utilisateur qui suit
+        followerUser = await UserModel.findByIdAndUpdate(followerId, {
+            $pull: { followings: followingId },
+        }, {new: true}).select("-password");
 
-        if (
-            followingUser.followers.includes(followerId) &&
-            followerId !== followingId
-        ) {
-            // Mettre à jour le document de l'utilisateur qui suit
-            followerUser = await UserModel.findByIdAndUpdate(followerId, {
-                $pull: { followings: followingId },
-            }, {new: true}).select("-password");
+        // Mettre à jour le document de l'utilisateur suivi
+        await UserModel.findByIdAndUpdate(followingId, {
+            $pull: { followers: followerId },
+        });
 
-            // Mettre à jour le document de l'utilisateur suivi
-            await UserModel.findByIdAndUpdate(followingId, {
-                $pull: { followers: followerId },
-            });
-        }
         return res.json({message: "OK", status: 200, data: followerUser})
 
     } catch (error) {
